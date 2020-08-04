@@ -50,22 +50,26 @@ import json
 import logging
 import sys
 import time
-from IEE1234VR4C import WSUVVO
+from get_load import PowerData
+# from IEE1234VR4C import WSUVVO
+# from IEEE123VVO import WSUVVO123
+# from IEEE1234VR4CnQ import WSUVVO123VCQ 
+from IEEE123VVOwithQcontrol import WSUVVO123Q               ##  calling the VVO with Q control
 from legacy_dev_status import LEGACY_DEV
-# from IEEE123 import RestorationWSU
+from model_query import MODEL_EQ
 # from Fault_Isolation import Isolation
 # from top_identify import Topology
 
-from gridappsd import GridAPPSD, DifferenceBuilder, utils, GOSS
+# from gridappsd import GridAPPSD, DifferenceBuilder, utils, GOSS
+
+from gridappsd import GridAPPSD, DifferenceBuilder, utils, GOSS, topics
 from gridappsd.topics import simulation_input_topic, simulation_output_topic, simulation_log_topic, simulation_output_topic
 
 DEFAULT_MESSAGE_PERIOD = 5
+# DEFAULT_MESSAGE_PERIOD = 15
 message_period = 5
 
-# logging.basicConfig(stream=sys.stdout, level=logging.DEBUG,
-#                     format="%(asctime)s - %(name)s;%(levelname)s|%(message)s",
-#                     datefmt="%Y-%m-%d %H:%M:%S")
-# Only log errors to the stomp logger.
+
 logging.getLogger('stomp.py').setLevel(logging.ERROR)
 
 _log = logging.getLogger(__name__)
@@ -80,7 +84,13 @@ class SwitchingActions(object):
     message to the simulation_input_topic with the forward and reverse difference specified.
     """
 
-    def __init__(self, simulation_id, gridappsd_obj, reg_list, cap_list, msr_mrids_cap, msr_mrids_reg):
+    # def __init__(self, simulation_id, gridappsd_obj, reg_list, cap_list, msr_mrids_cap, msr_mrids_reg):
+    # def __init__(self, simulation_id, gridappsd_obj, reg_list, cap_list,  demand, line,msr_mrids_demand,msr_mrids_cap,msr_mrids_reg):
+   
+    def __init__(self, simulation_id, gridappsd_obj, reg_list, cap_list,  demand, line, msr_mrids_demand,msr_mrids_cap, msr_mrids_reg, obj_msr_inv,obj_msr_node,obj_PVinv):
+    
+     
+    
         """ Create a ``CapacitorToggler`` object
 
         This object should be used as a subscription callback from a ``GridAPPSD``
@@ -104,18 +114,28 @@ class SwitchingActions(object):
         """
         self._gapps = gridappsd_obj
         self._flag = 0
-        self._Isolate = False
-        self._Restoration = False
         self.reg_list = reg_list[1:]
         self._cap_list = cap_list
         self._store = []
         self._message_count = 0
         self._last_toggle_on = False
-        self._open_diff = DifferenceBuilder(simulation_id)
-        self._close_diff = DifferenceBuilder(simulation_id)
+        self._cap_open_diff = DifferenceBuilder(simulation_id)
+        self._cap_close_diff = DifferenceBuilder(simulation_id)
+        self._tap_open_diff = DifferenceBuilder(simulation_id)
+        self._tap_close_diff = DifferenceBuilder(simulation_id)
+        # self._open_diff = DifferenceBuilder(simulation_id)
+        # self._close_diff = DifferenceBuilder(simulation_id)
         self._publish_to_topic = simulation_input_topic(simulation_id)
+        self._pv_qpower = DifferenceBuilder(simulation_id)
+        self.msr_mrids_demand = msr_mrids_demand
         self.msr_mrids_cap = msr_mrids_cap
         self.msr_mrids_reg = msr_mrids_reg
+        self.LineData = line
+        self.DemandData  = demand
+        self.obj_msr_inv  = obj_msr_inv
+        # self.obj_msr_PVinv  = obj_PVinv
+        self.obj_PVinv  = obj_PVinv
+        self.obj_msr_node  = obj_msr_node
         _log.info("Building cappacitor list")
 
         
@@ -134,171 +154,123 @@ class SwitchingActions(object):
         """
 
         self._message_count += 1
-        if self._message_count % message_period == 0:
-            print(self.reg_list)
-            # calling VVO
-            capreg_st = WSUVVO()
-            statusO_c, statusO_r = capreg_st.VVO()
-            print('\n \n ........................')
-            print('Optimization results')
-            print( 'capacitor switch status', statusO_c,)
-            print( 'regulator tap position', statusO_r)
-            print('........................\n \n')
 
-            ch = []
-            for m in range(4):
-                if statusO_c[m] == 0:
-                    ch.append(self._cap_list[m])
+        # d = PowerData(self.msr_mrids_demand,message,  self.LineData)
+
+        d = PowerData(self.msr_mrids_demand,message, self.obj_msr_inv, self.LineData, self.obj_msr_node)
+        platformload = d.demand()
+        print('Platform Load is obtained....')
+
+
+        if self._message_count % message_period == 0:
+
+
             no_opt = LEGACY_DEV(self.msr_mrids_cap,self.msr_mrids_reg, message) 
             statusP_c = no_opt.cap_()
             statusP_r = no_opt.reg_()
             print('\n \n ........................')
-            print('Platform Status')
-            print('capacitor switch status', statusP_c)            
-            print('regulator tap position' , statusP_r)
+            # print('Platform Status')
+            print('from plarform capacitor switch status', statusP_c)            
+            print('from plarform capacitor regulator tap position' , statusP_r)
             print('........................\n \n')
 
-            for cap_mrid in ch:
-                self._close_diff.add_difference(cap_mrid, "ShuntCompensator.sections", 0, 1)
-                msg = self._close_diff.get_message()
+            # mridcap = '_4A583CB1-F509-4BE7-ACE0-88B7224E4816'
+
+            # self._cap_close_diff.add_difference(mridcap, "ShuntCompensator.sections", 0, 1)
+             
+            # msg = self._cap_close_diff.get_message()
+            # self._gapps.send(self._publish_to_topic, json.dumps(msg))
+            # print(msg)
+            # ## calling VVO
+            # capreg_st = WSUVVO123()
+            # # statusO_c, statusO_r = capreg_st.VVO(platformload)
+            # statusO_c, statusO_r = capreg_st.VVO123(self.LineData, platformload)
+            # print('\n \n ........................')
+            # print('Optimization results')
+            # print( 'capacitor switch status', statusO_c,)
+            # print( 'regulator tap position', statusO_r)
+            # print('........................\n \n')
+
+
+            # ## calling VVO
+            # capreg_st = WSUVVO123()
+            # Qpvcontrol0 = capreg_st.VVO123(self.LineData, platformload)
+            # print('\n \n ........................')
+            # print('Optimization results')
+            # print( 'capacitor switch status', Qpvcontrol0)
+            # print('........................\n \n')
+
+
+            # # ## calling VVO with Q control
+            capreg_st = WSUVVO123Q()
+            Qpvcontrol0 = capreg_st.VVO123(self.LineData, platformload)
+            print('\n \n ........................')
+            print('Optimization results')
+            print( 'reactive power control status', Qpvcontrol0)
+            print('........................\n \n')
+
+
+                        # ## calling VVO with Q control
+            # capreg_st = WSUVVO123VCQ()
+            # Qpvcontrol0, statusO_c , statusO_r  = capreg_st.VVO123(self.LineData, platformload)
+            # print('\n \n ........................')
+            # print('Optimization results')
+            # print( 'reactive power control status', Qpvcontrol0)
+            # print( 'capacitor switch status', statusO_c,)
+            # print( 'regulator tap position', statusO_r)
+            # print('........................\n \n')
+
+            for inv in self.obj_PVinv:
+                for qpv in Qpvcontrol0:
+                    if inv['bus'] == qpv['bus']:
+                        # print(eqid)
+                        # print(mrid)
+                        qpv['mrid'] = inv['mridid']        
+
+            # print(Qpvcontrol0)
+            
+            
+            for qpv_mrid in Qpvcontrol0:
+                self._pv_qpower.add_difference(qpv_mrid['mrid'], "PowerElectronicsConnection.q", qpv_mrid['val'], 0)                                        
+                msg = self._pv_qpower.get_message()
+                # print(msg)
                 self._gapps.send(self._publish_to_topic, json.dumps(msg))
+                self._pv_qpower.clear()
+                # print(msg)
 
-            ind = 0
-            for reg_mrid in self.reg_list:
-                self._close_diff.add_difference(reg_mrid, "TapChanger.step", statusO_r[ind], 0)
-                ind += 1
-                msg = self._close_diff.get_message()
-                self._gapps.send(self._publish_to_topic, json.dumps(msg))
+            # ch = []
+            # for m in range(4):
+            #     if statusO_c[m] == 0:
+            #         ch.append(self._cap_list[m])
 
+            # statusO_c = [ 0 , 0 , 0 ,0,0]
+            
+            # statusO_r = [ 0 , 0 , 0 ,0,0]
+            # for cap_mrid in ch:
+            #     self._cap_close_diff.add_difference(cap_mrid, "ShuntCompensator.sections", 0, 1)
+            #     msg = self._close_diff.get_message()
+            #     self._gapps.send(self._publish_to_topic, json.dumps(msg))
 
+            ### optimization  with VR and C
 
+            # indx = 0
+            # for cap_mrid in self._cap_list :
+            #     if statusO_c[indx] == None: 
+            #         self._cap_close_diff.add_difference(cap_mrid, "ShuntCompensator.sections", statusP_c[indx], 0)
+            #         indx += 1                       
+            #     else:
+            #         self._cap_close_diff.add_difference(cap_mrid, "ShuntCompensator.sections", statusO_c[indx], 0)
+            #         indx += 1
+            #     msg = self._cap_close_diff.get_message()
+            #     self._gapps.send(self._publish_to_topic, json.dumps(msg))
 
-def get_regulators_mrids(gridappsd_obj, mrid):
-    query = """
-PREFIX r:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-PREFIX c:  <http://iec.ch/TC57/CIM100#>
-SELECT ?rid ?rname ?pname ?tname ?wnum ?phs ?incr ?mode ?enabled ?highStep ?lowStep ?neutralStep ?normalStep ?neutralU
- ?step ?initDelay ?subDelay ?ltc ?vlim
-?vset ?vbw ?ldc ?fwdR ?fwdX ?revR ?revX ?discrete ?ctl_enabled ?ctlmode ?monphs ?ctRating ?ctRatio ?ptRatio ?fdrid
-WHERE {
-VALUES ?fdrid {"%s"}  # 123
- ?pxf c:Equipment.EquipmentContainer ?fdr.
- ?fdr c:IdentifiedObject.mRID ?fdrid.
- ?rtc r:type c:RatioTapChanger.
- ?rtc c:IdentifiedObject.name ?rname.
- ?rtc c:IdentifiedObject.mRID ?rid.
- ?rtc c:RatioTapChanger.TransformerEnd ?end.
- ?end c:TransformerEnd.endNumber ?wnum.
-{?end c:PowerTransformerEnd.PowerTransformer ?pxf.}
-  UNION
-{?end c:TransformerTankEnd.TransformerTank ?tank.
- ?tank c:IdentifiedObject.name ?tname.
- OPTIONAL {?end c:TransformerTankEnd.phases ?phsraw.
-  bind(strafter(str(?phsraw),"PhaseCode.") as ?phs)}
- ?tank c:TransformerTank.PowerTransformer ?pxf.}
- ?pxf c:IdentifiedObject.name ?pname.
- ?rtc c:RatioTapChanger.stepVoltageIncrement ?incr.
- ?rtc c:RatioTapChanger.tculControlMode ?moderaw.
-  bind(strafter(str(?moderaw),"TransformerControlMode.") as ?mode)
- ?rtc c:TapChanger.controlEnabled ?enabled.
- ?rtc c:TapChanger.highStep ?highStep.
- ?rtc c:TapChanger.initialDelay ?initDelay.
- ?rtc c:TapChanger.lowStep ?lowStep.
- ?rtc c:TapChanger.ltcFlag ?ltc.
- ?rtc c:TapChanger.neutralStep ?neutralStep.
- ?rtc c:TapChanger.neutralU ?neutralU.
- ?rtc c:TapChanger.normalStep ?normalStep.
- ?rtc c:TapChanger.step ?step.
- ?rtc c:TapChanger.subsequentDelay ?subDelay.
- ?rtc c:TapChanger.TapChangerControl ?ctl.
- ?ctl c:TapChangerControl.limitVoltage ?vlim.
- ?ctl c:TapChangerControl.lineDropCompensation ?ldc.
- ?ctl c:TapChangerControl.lineDropR ?fwdR.
- ?ctl c:TapChangerControl.lineDropX ?fwdX.
- ?ctl c:TapChangerControl.reverseLineDropR ?revR.
- ?ctl c:TapChangerControl.reverseLineDropX ?revX.
- ?ctl c:RegulatingControl.discrete ?discrete.
- ?ctl c:RegulatingControl.enabled ?ctl_enabled.
- ?ctl c:RegulatingControl.mode ?ctlmoderaw.
-  bind(strafter(str(?ctlmoderaw),"RegulatingControlModeKind.") as ?ctlmode)
- ?ctl c:RegulatingControl.monitoredPhase ?monraw.
-  bind(strafter(str(?monraw),"PhaseCode.") as ?monphs)
- ?ctl c:RegulatingControl.targetDeadband ?vbw.
- ?ctl c:RegulatingControl.targetValue ?vset.
- ?asset c:Asset.PowerSystemResources ?rtc.
- ?asset c:Asset.AssetInfo ?inf.
- ?inf c:TapChangerInfo.ctRating ?ctRating.
- ?inf c:TapChangerInfo.ctRatio ?ctRatio.
- ?inf c:TapChangerInfo.ptRatio ?ptRatio.
-}
-ORDER BY ?pname ?tname ?rname ?wnum
-    """ % mrid
-    results = gridappsd_obj.query_data(query)
-    regulators = []
-    results_obj = results['data']
-    for p in results_obj['results']['bindings']:
-        regulators.append(p['rid']['value'])
-    return regulators
+            # ind = 0
+            # for reg_mrid in self.reg_list:
+            #     self._tap_close_diff.add_difference(reg_mrid, "TapChanger.step", statusO_r[ind], 0)
+            #     ind += 1
+            #     msg = self._tap_close_diff.get_message()
+            #     self._gapps.send(self._publish_to_topic, json.dumps(msg))
 
-
-def get_capacitors_mrids(gridappsd_obj, mrid):
-    query = """
-# capacitors (does not account for 2+ unequal phases on same LinearShuntCompensator) - DistCapacitor
-PREFIX r:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-PREFIX c:  <http://iec.ch/TC57/CIM100#>
-SELECT ?name ?basev ?nomu ?bsection ?bus ?conn ?grnd ?phs ?ctrlenabled ?discrete ?mode ?deadband ?setpoint ?delay ?monclass ?moneq ?monbus ?monphs ?id ?fdrid WHERE {
- ?s r:type c:LinearShuntCompensator.
-# feeder selection options - if all commented out, query matches all feeders
-VALUES ?fdrid {"%s"}  # 123 bus
-#VALUES ?fdrid {"_49AD8E07-3BF9-A4E2-CB8F-C3722F837B62"}  # 13 bus
-#VALUES ?fdrid {"_5B816B93-7A5F-B64C-8460-47C17D6E4B0F"}  # 13 bus assets
-#VALUES ?fdrid {"_4F76A5F9-271D-9EB8-5E31-AA362D86F2C3"}  # 8500 node
-#VALUES ?fdrid {"_67AB291F-DCCD-31B7-B499-338206B9828F"}  # J1
-#VALUES ?fdrid {"_9CE150A8-8CC5-A0F9-B67E-BBD8C79D3095"}  # R2 12.47 3
- ?s c:Equipment.EquipmentContainer ?fdr.
- ?fdr c:IdentifiedObject.mRID ?fdrid.
- ?s c:IdentifiedObject.name ?name.
- ?s c:ConductingEquipment.BaseVoltage ?bv.
- ?bv c:BaseVoltage.nominalVoltage ?basev.
- ?s c:ShuntCompensator.nomU ?nomu. 
- ?s c:LinearShuntCompensator.bPerSection ?bsection. 
- ?s c:ShuntCompensator.phaseConnection ?connraw.
-   bind(strafter(str(?connraw),"PhaseShuntConnectionKind.") as ?conn)
- ?s c:ShuntCompensator.grounded ?grnd.
- OPTIONAL {?scp c:ShuntCompensatorPhase.ShuntCompensator ?s.
- ?scp c:ShuntCompensatorPhase.phase ?phsraw.
-   bind(strafter(str(?phsraw),"SinglePhaseKind.") as ?phs) }
- OPTIONAL {?ctl c:RegulatingControl.RegulatingCondEq ?s.
-          ?ctl c:RegulatingControl.discrete ?discrete.
-          ?ctl c:RegulatingControl.enabled ?ctrlenabled.
-          ?ctl c:RegulatingControl.mode ?moderaw.
-           bind(strafter(str(?moderaw),"RegulatingControlModeKind.") as ?mode)
-          ?ctl c:RegulatingControl.monitoredPhase ?monraw.
-           bind(strafter(str(?monraw),"PhaseCode.") as ?monphs)
-          ?ctl c:RegulatingControl.targetDeadband ?deadband.
-          ?ctl c:RegulatingControl.targetValue ?setpoint.
-          ?s c:ShuntCompensator.aVRDelay ?delay.
-          ?ctl c:RegulatingControl.Terminal ?trm.
-          ?trm c:Terminal.ConductingEquipment ?eq.
-          ?eq a ?classraw.
-           bind(strafter(str(?classraw),"CIM100#") as ?monclass)
-          ?eq c:IdentifiedObject.name ?moneq.
-          ?trm c:Terminal.ConnectivityNode ?moncn.
-          ?moncn c:IdentifiedObject.name ?monbus.
-          }
- ?s c:IdentifiedObject.mRID ?id. 
- ?t c:Terminal.ConductingEquipment ?s.
- ?t c:Terminal.ConnectivityNode ?cn. 
- ?cn c:IdentifiedObject.name ?bus
-}
-ORDER by ?name
-    """ % mrid
-    results = gridappsd_obj.query_data(query)
-    capacitors = []
-    results_obj = results['data']
-    for p in results_obj['results']['bindings']:
-        capacitors.append(p['id']['value'])
-    return capacitors
 
 
 def _main():
@@ -341,41 +313,52 @@ def _main():
 
     # Get measurement MRIDS for regulators in the feeder
     topic = "goss.gridappsd.process.request.data.powergridmodel"
-    message = {
-        "modelId": model_mrid,
-        "requestType": "QUERY_OBJECT_MEASUREMENTS",
-        "resultFormat": "JSON",
-        "objectType": "PowerTransformer"}     
-    obj_msr_reg = gapps.get_response(topic, message, timeout=90)
 
-    message = {
-        "modelId": model_mrid,
-        "requestType": "QUERY_OBJECT_MEASUREMENTS",
-        "resultFormat": "JSON",
-        "objectType": "LinearShuntCompensator"}     
-    obj_msr_cap = gapps.get_response(topic, message, timeout=90)
+     # Run queries to get model information
+    print('Get Model Information..... \n')   
+    query = MODEL_EQ(gapps, model_mrid, topic)
 
-    message = {
-        "modelId": model_mrid,
-        "requestType": "QUERY_OBJECT_MEASUREMENTS",
-        "resultFormat": "JSON",
-        "objectType": "EnergyConsumer"}     
-    obj_msr_loads = gapps.get_response(topic, message, timeout=90)
-    print(obj_msr_loads)
-    with open('msr_reg.json','w') as json_file:
-        json.dump(obj_msr_reg, json_file)
+    ### with VR and Cap
+    # obj_msr_demand , obj_msr_reg, obj_msr_cap = query.meas_mrids()
+
+    ### with Qcontrol
+    obj_msr_demand , obj_msr_reg, obj_msr_cap , obj_msr_inv , obj_msr_node = query.meas_mrids()
+
+    regulator = query.get_regulators_mrids()
+    # print('regultor is printed')
+    capacitor = query.get_capacitors_mrids()
+    # print('capacitor is printed')
+    LoadData = query.distLoad()
+
+    obj_msr_inv = obj_msr_inv['data']
+    # print(obj_msr_inv)
+    obj_msr_inv = [d for d in obj_msr_inv if d['type'] != 'PNV']
+    # print(obj_msr_inv[0])
+
+    obj_inv = query.Inverters()
+
+    obj_PVinv = query.PVInverters()
+    # print(obj_PVinv[0])
+
+    for inv in obj_msr_inv:
+        for sinv in obj_PVinv:
+            if sinv['mrid'] == inv['eqid']:
+                inv['Srated'] = sinv['ratedS']
+
+    # print(obj_msr_inv[0])
+    ### Load Line parameters
+    with open('LineData.json', 'r') as read_file:
+        line = json.load(read_file)
 	
-    # get objects mrids
-    regulators = get_regulators_mrids(gapps, model_mrid)  
-    capacitors = get_capacitors_mrids(gapps, model_mrid)
+
+    print("Initialize..... \n")
 
 
-    # print(regulators)
-    # print('.......................................\n \n ')
-    # print(obj_msr_reg)
-
-
-    toggler = SwitchingActions(opts.simulation_id, gapps, regulators, capacitors, obj_msr_cap, obj_msr_reg)
+    # toggler = SwitchingActions(opts.simulation_id, gapps, regulators, capacitors, obj_msr_cap, obj_msr_reg)
+    # toggler = SwitchingActions(opts.simulation_id, gapps, regulator, capacitor, LoadData, line,obj_msr_demand,obj_msr_cap, obj_msr_reg)
+    
+    toggler = SwitchingActions(opts.simulation_id, gapps, regulator, capacitor, LoadData, line,obj_msr_demand,obj_msr_cap, obj_msr_reg , obj_msr_inv , obj_msr_node , obj_PVinv)
+    
     print("Now subscribing")
     gapps.subscribe(listening_to_topic, toggler)
     while True:

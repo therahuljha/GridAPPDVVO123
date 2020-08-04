@@ -53,5 +53,5 @@ setup(
     name="gridappsd",
     version=__version__,
     install_requires=['PyYaml', 'stomp.py', 'pytz'],
-    packages=['sample_app'],
+    packages=['vvo123_app'],
 )

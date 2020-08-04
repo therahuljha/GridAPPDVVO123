@@ -8,7 +8,9 @@ with 4 VR, 4 capbank
 """
 
 
-
+import json
+import math
+import networkx as nx
 import numpy as np
 from pulp import *
 import time
@@ -26,14 +28,14 @@ class WSUVVO(object):
     def __init__(self):
         pass
 
-    def VVO(self):
+    def VVO(self,LoadData):
     
     # Parameters
         nNodes = 125
         nEdges = 126
-        CVRP = 0.6
-        CVRQ = 3.0
-        Vs = 1.1
+        CVRP = 1.0
+        CVRQ = 1.0
+        Vs = 1.1025
         #Tie_Switches = np.matrix([54, 94], [117, 123]);
         edges = np.loadtxt('edges.txt') 
         demand = np.loadtxt('LoadData.txt') 
@@ -45,12 +47,12 @@ class WSUVVO(object):
         s_i = range(0,nNodes)
         x_ij = range(0,nEdges)
         V_i = range(0,nNodes)
-        sw_i=range(0,nNodes);
-        tap_r1=range(0,33);
-        tap_r2=range(0,33);
-        tap_r3=range(0,33);
-        tap_r4=range(0,33);
-        tap_r5=range(0,33);
+        sw_i=range(0,nNodes)
+        tap_r1=range(0,33)
+        tap_r2=range(0,33)
+        tap_r3=range(0,33)
+        tap_r4=range(0,33)
+        tap_r5=range(0,33)
 
                 
                 # Different variables for optimization function
@@ -65,9 +67,9 @@ class WSUVVO(object):
         assign_vars_Qija = LpVariable.dicts("xQa", x_ij, -10000, 10000)
         assign_vars_Qijb = LpVariable.dicts("xQb", x_ij, -10000, 10000)
         assign_vars_Qijc = LpVariable.dicts("xQc", x_ij, -10000, 10000)
-        assign_vars_Via = LpVariable.dicts("xVa", V_i, 0.9025, 1.1)
-        assign_vars_Vib = LpVariable.dicts("xVb", V_i, 0.9025, 1.1)
-        assign_vars_Vic = LpVariable.dicts("xVc", V_i, 0.9025, 1.1)
+        assign_vars_Via = LpVariable.dicts("xVa", V_i, 0.91025, 1.1025)
+        assign_vars_Vib = LpVariable.dicts("xVb", V_i, 0.91025, 1.1025)
+        assign_vars_Vic = LpVariable.dicts("xVc", V_i, 0.91025, 1.1025)
         assign_vars_swia = LpVariable.dicts("xswa", sw_i, 0, 1,  LpBinary)
         assign_vars_swib = LpVariable.dicts("xswb", sw_i, 0, 1,  LpBinary)
         assign_vars_swic = LpVariable.dicts("xswc", sw_i, 0, 1,  LpBinary)
@@ -311,7 +313,7 @@ class WSUVVO(object):
            prob += assign_vars_Vic[66] - tapk[k]**2*assign_vars_Vic[118] + M*(1-assign_vars_tapi5[k]) >= 0 
             
         
-        prob.solve()        
+        prob.solve(CPLEX(msg=1))        
         
         varsdict = {}
         for v in prob.variables():
@@ -361,7 +363,7 @@ class WSUVVO(object):
                
 
         status_c = [varsdict['xswa_82'], varsdict['xswb_82'], varsdict['xswc_82'], varsdict['xswa_87'], varsdict['xswb_89'], varsdict['xswc_91'] ]
-        status_c = [0,0,1,0]
+        # status_c = [0,0,1,0]
         status_r = taps
         return status_c, status_r
        

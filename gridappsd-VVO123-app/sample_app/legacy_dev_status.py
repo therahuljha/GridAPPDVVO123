@@ -44,7 +44,7 @@ class LEGACY_DEV(object):
             if d1['measid'] in cap_loc:
                 cap_bus.append(d1['bus'])
 
-        print(cap_bus)
+        # print(cap_bus)
         return store
 
     def reg_(self):
@@ -70,13 +70,13 @@ class LEGACY_DEV(object):
             if (v['measurement_mrid']) in ms_id:
                 store.append(v['value'])
                 reg_loc.append(v['measurement_mrid'])
-                print(v['measurement_mrid'], v['value'])
+                # print(v['measurement_mrid'], v['value'])
                 
         # Find which bus has reg
         reg_bus = []
         for d1 in data1['data']: 
             if d1['measid'] in reg_loc:
                 reg_bus.append(d1['bus'])
-        print(reg_bus)
+        # print(reg_bus)
         return store
         
